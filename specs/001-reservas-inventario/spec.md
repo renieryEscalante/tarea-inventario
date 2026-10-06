@@ -1,4 +1,4 @@
-﻿# Feature Specification: Reservas de inventario
+# Feature Specification: Reservas de inventario
 
 **Feature Branch**: `001-reservas-inventario`
 
@@ -7,6 +7,13 @@
 **Status**: Draft
 
 **Input**: User description: "Implementar InventoryService para reservar las unidades del carrito, liberar reservas vencidas, confirmar compras pagadas y emitir una alerta de pocas existencias sin repetirla hasta el reabastecimiento. No autenticar usuarios ni crear endpoints."
+
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: If a reservation expires, what should the service do when it later receives the same order ID again? → Create a new reservation with the same order ID if stock is available.
+- Q: When the same order ID has a new reservation, how should the service identify which reservation a payment approval refers to? → Include a unique reservation-attempt ID with each approval.
 
 ## User Scenarios & Testing
 
@@ -39,7 +46,7 @@ Como cliente y operador de la tienda, quiero que las reservas se liberen al venc
 
 1. **Given** una reserva aún vigente, **When** se aprueba el pago, **Then** la reserva se confirma y sus unidades dejan de formar parte del inventario disponible.
 2. **Given** una reserva cuyo plazo de pago ha vencido sin aprobación, **When** el servicio procesa el vencimiento, **Then** la reserva se libera y sus unidades vuelven a estar disponibles.
-3. **Given** una reserva liberada por vencimiento, **When** llega posteriormente una aprobación de pago, **Then** el servicio no confirma esa reserva vencida ni descuenta unidades que ya se hayan reasignado.
+3. **Given** una reserva liberada por vencimiento, **When** llega posteriormente una aprobación de pago identificada con el ID de intento de esa reserva, **Then** el servicio no confirma esa reserva vencida ni otra reserva posterior del mismo pedido, ni descuenta unidades que ya se hayan reasignado.
 4. **Given** una categoría `STANDARD`, `PRE_ORDER` o `FLASH_SALE`, **When** se crea una reserva, **Then** su plazo es respectivamente 15 minutos, 24 horas o 5 minutos; `FLASH_SALE` limita la solicitud a 2 unidades y las otras dos categorías no imponen límite por pedido.
 
 ---
@@ -77,11 +84,11 @@ Como equipo de compras, quiero recibir un aviso cuando las unidades disponibles 
 - **FR-002**: El servicio DEBE impedir que las unidades reservadas se asignen a otro pedido mientras la reserva siga vigente.
 - **FR-003**: El servicio DEBE rechazar una solicitud que exceda las unidades disponibles, sin crear una reserva parcial.
 - **FR-004**: El servicio DEBE procesar cada producto del carrito como un pedido independiente.
-- **FR-005**: El servicio DEBE reconocer reenvíos del mismo pedido y evitar reservas duplicadas.
+- **FR-005**: El servicio DEBE reconocer reenvíos del mismo pedido y evitar reservas duplicadas mientras su reserva no haya vencido. Si la reserva anterior venció, el servicio DEBE crear una nueva reserva con el mismo identificador de pedido cuando haya existencias disponibles.
 - **FR-006**: El servicio DEBE establecer vencimiento según la categoría del producto: 15 minutos para `STANDARD`, 24 horas para `PRE_ORDER` y 5 minutos para `FLASH_SALE`.
 - **FR-007**: El servicio DEBE limitar los pedidos `FLASH_SALE` a 2 unidades; `STANDARD` y `PRE_ORDER` no tienen límite de unidades por pedido.
 - **FR-008**: El servicio DEBE permitir agregar categorías de producto con sus propias reglas de reserva, sin restringir el catálogo a las categorías enumeradas en esta especificación.
-- **FR-009**: El servicio DEBE confirmar una reserva vigente cuando se apruebe su pago y mantener sus unidades como vendidas, no disponibles.
+- **FR-009**: El servicio DEBE confirmar una reserva vigente cuando se apruebe su pago y mantener sus unidades como vendidas, no disponibles. Cada aprobacion DEBE identificar el intento de reserva especifico mediante un ID de intento unico.
 - **FR-010**: El servicio DEBE liberar una reserva al vencer sin pago aprobado y devolver sus unidades al inventario disponible.
 - **FR-011**: El servicio DEBE evitar que aprobaciones o liberaciones repetidas cambien más de una vez las unidades o el estado de la reserva.
 - **FR-012**: El servicio DEBE emitir un aviso asociado al producto cuando sus unidades disponibles pasen a 5 o menos.
@@ -93,7 +100,7 @@ Como equipo de compras, quiero recibir un aviso cuando las unidades disponibles 
 
 - **Producto**: Artículo inventariable con categoría, existencias y unidades disponibles.
 - **Pedido**: Solicitud de compra de un producto y una cantidad; mantiene identidad estable para reconocer reenvíos.
-- **Reserva**: Apartado temporal asociado a un pedido, con cantidad, vencimiento y estado vigente, vencido/liberado o confirmado.
+- **Reserva**: Apartado temporal asociado a un pedido, con un ID de intento unico, cantidad, vencimiento y estado vigente, vencido/liberado o confirmado.
 - **Categoría de producto**: Define el plazo de pago y, cuando corresponda, el límite de unidades por pedido.
 - **Aviso de existencias bajas**: Señal vinculada a un producto cuando sus unidades disponibles cruzan el umbral de cinco; su emisión se rearma tras reabastecer por encima del umbral.
 
@@ -103,16 +110,16 @@ Como equipo de compras, quiero recibir un aviso cuando las unidades disponibles 
 
 - **SC-001**: En todas las pruebas de solicitudes concurrentes, las unidades reservadas o vendidas nunca superan las existencias del producto.
 - **SC-002**: El 100% de las reservas sin pago se libera al procesar su vencimiento, y el 100% de las reservas con pago aprobado vigente queda confirmada.
-- **SC-003**: El reenvío de una solicitud de pedido no incrementa en más de una reserva la asignación de unidades para ese pedido.
+- **SC-003**: Reenviar una solicitud con el mismo identificador mientras su intento de reserva no haya vencido no crea más de una reserva ni duplica la asignación de unidades para ese intento.
 - **SC-004**: Cada producto emite como máximo un aviso mientras sus existencias disponibles permanezcan en cinco o menos; tras reabastecer por encima de cinco, vuelve a emitir un aviso en el siguiente cruce.
 - **SC-005**: Las reglas de los tres tipos de categoría definidos se aplican correctamente en todos sus casos de aceptación, y una categoría adicional puede declararse con reglas propias sin cambiar esos resultados.
 
 ## Assumptions
 
-- El identificador estable del pedido se proporciona al servicio para reconocer reintentos de la aplicación móvil.
+- El identificador estable del pedido se proporciona al servicio para reconocer reintentos de la aplicación móvil; tras vencer una reserva, el mismo identificador puede iniciar una nueva reserva si hay existencias disponibles.
 - Los plazos se cuentan desde la creación de cada reserva y el instante exacto de vencimiento ya se considera vencido.
 - El cálculo de unidades disponibles descuenta las reservas vigentes y las unidades vendidas.
 - El reabastecimiento se representa como una operación que incrementa las existencias del producto.
-- La aprobación del pago llega al servicio como un resultado externo; integrar una pasarela de pago no forma parte de esta iteración.
+- La aprobación del pago llega al servicio como un resultado externo e identifica el intento de reserva mediante su ID de intento único; integrar una pasarela de pago no forma parte de esta iteración.
 - El servicio opera sin identidad autenticada de usuario; el pedido se identifica por su identificador, no por una cuenta.
 
