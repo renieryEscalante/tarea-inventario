@@ -1,27 +1,36 @@
 # Contrato: servicio de inventario
 
-## Interfaz protegida existente
+## Contrato protegido existente
 
-Paquete: `com.store.inventory.api` (no modificar).
+Paquete: `com.store.inventory.api`. Sus archivos y sus firmas permanecen intactos.
 
-- `InventoryService.registerProduct(sku, category)` registra categoría y producto.
-- `InventoryService.addStock(sku, quantity)` añade unidades positivas.
-- `InventoryService.reserve(orderId, sku, quantity)` reserva una línea de pedido; cantidades inválidas, límite excedido o stock insuficiente fallan sin reserva parcial.
-- `InventoryService.confirm(orderId)` confirma según el contrato actual cuando hay reserva activa.
-- `InventoryService.available(sku)` devuelve unidades reservables.
-- `Inventory.create(Clock, StockAlertListener)` construye el servicio.
-- `StockAlertListener.onLowStock(sku, availableUnits)` recibe avisos sin imponer un canal.
+- `InventoryService.registerProduct(sku, category)` registra un producto antes de agregar stock.
+- `InventoryService.addStock(sku, quantity)` agrega una cantidad positiva.
+- `InventoryService.reserve(orderId, sku, quantity)` reserva una línea del pedido; rechaza cantidad inválida, límite excedido o stock insuficiente sin reserva parcial.
+- `InventoryService.confirm(orderId)` confirma la reserva activa más reciente de ese pedido. Si no hay una reserva activa, lanza `IllegalStateException`.
+- `InventoryService.available(sku)` devuelve unidades disponibles; para SKU desconocido devuelve cero.
+- `Inventory.create(Clock, StockAlertListener)` conserva su firma y crea el servicio con las reglas predeterminadas.
+- `StockAlertListener.onLowStock(sku, availableUnits)` recibe el aviso sin imponer un canal de comunicación.
+
+## Extensión aditiva de configuración
+
+La configuración se define fuera de `com.store.inventory.api` para no alterar el contrato protegido:
+
+- `InventoryPolicies` contiene una política para cada valor de `ProductCategory`.
+- `InventoryPolicies` conserva un mapa inmutable de `ProductCategory` a `CategoryPolicy`, con una entrada para cada categoría.
+- `CategoryPolicy` contiene un `Duration` positivo y un `OptionalInt` de máximo por pedido; un máximo vacío significa que no hay límite.
+- La sobrecarga `Inventory.create(Clock, StockAlertListener, InventoryPolicies)` crea el mismo `InventoryService` con las políticas recibidas.
+- Una configuración inválida (categoría ausente, duración no positiva o máximo no positivo) se rechaza con `IllegalArgumentException`.
+- La fábrica original usa estos valores: `STANDARD` 15 minutos y sin límite; `PRE_ORDER` 24 horas y sin límite; `FLASH_SALE` 5 minutos y máximo 2.
 
 ## Reglas observables
 
-- Reintentar un `orderId` con reserva activa no reserva dos veces.
-- El vencimiento es inclusivo: `now >= expiresAt` libera la reserva.
-- Las duraciones son 15 minutos, 24 horas y 5 minutos para `STANDARD`, `PRE_ORDER` y `FLASH_SALE`; máximo dos para `FLASH_SALE`.
-- El aviso se emite al alcanzar cinco o menos unidades disponibles, se suprime hasta que `addStock` supere cinco.
-- Las líneas de carrito se procesan como pedidos independientes.
-
-## Decisiones de superficie pública pendientes
-
-FR-009 requiere una operación de aprobación que reciba `orderId` y `reservationAttemptId`, así como una forma de devolver ese ID al consumidor al crear la reserva. La API actual no ofrece ninguna de las dos. Una interfaz adicional pública y una operación explícita de creación/aprobación de intentos podría mantener los archivos existentes, pero debe definirse y aprobarse en `spec.md` antes de implementación.
-
-FR-008 requiere registrar categorías fuera del enum cerrado `ProductCategory`. Debe aclararse en `spec.md` y en la constitución si se conserva el enum protegido y se restringe el requisito a categorías predeclaradas, o si se permite extender el API. Ningún contrato de ejecución para categorías nuevas queda definido todavía.
+- Reintentar el mismo `orderId` con una reserva activa no asigna unidades nuevamente.
+- Después de vencer un intento, el mismo `orderId` puede crear otra reserva si hay disponibilidad.
+- La expiración es inclusiva: `now >= expiresAt` libera unidades.
+- Una aprobación identificada por `orderId` confirma la reserva activa más reciente, incluso si el aviso de pago llegó por un intento anterior vencido.
+- Una aprobación repetida no vende unidades más de una vez; una liberación repetida no devuelve unidades más de una vez.
+- El aviso se intenta al cruzar de más de cinco a cinco o menos unidades disponibles. Tras intentarlo, no se repite hasta que `addStock` deje más de cinco unidades disponibles.
+- Si el listener lanza una excepción de ejecución, el cambio de inventario se conserva, la operación termina sin propagar esa excepción y el aviso no se reintenta antes del rearme.
+- Cada producto del carrito se procesa como pedido independiente.
+- No se agregan endpoints ni autenticación.

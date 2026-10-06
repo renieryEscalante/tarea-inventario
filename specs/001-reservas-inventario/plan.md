@@ -1,39 +1,35 @@
-# Implementation Plan: Reservas de inventario
+# Plan de implementación: Reservas de inventario
 
-**Branch**: `001-reservas-inventario` | **Date**: 2026-10-06 | **Spec**: [spec.md](spec.md)
+**Rama**: `001-reservas-inventario` | **Fecha**: 2026-10-06 | **Especificación**: [spec.md](spec.md)
 
-## Summary
+## Resumen
 
-Implementar el ciclo de reservas en memoria detrás de `Inventory.create(Clock, StockAlertListener)`, preservando los archivos de `com.store.inventory.api`. El diseño previsto mantiene estado de productos y reservas bajo coordinación segura ante concurrencia, aplica políticas de categoría configurables y emite alertas por `StockAlertListener`. El diseño queda bloqueado para implementación hasta resolver la incompatibilidad de categorías nuevas y el modo público de identificar intentos de pago.
+Implementar reservas, vencimientos, confirmaciones y alertas en memoria detrás de `Inventory.create(Clock, StockAlertListener)`, sin modificar los archivos protegidos de `com.store.inventory.api`. Las reglas para `STANDARD`, `PRE_ORDER` y `FLASH_SALE` se representarán como políticas configurables. Una sobrecarga adicional de fábrica aceptará dichas políticas; la fábrica existente conservará sus valores predeterminados y firma. Las aprobaciones se resuelven por `orderId` y confirman la reserva activa más reciente. Una excepción de `StockAlertListener` no revierte el cambio de inventario ni rearma la alerta.
 
-## Technical Context
+## Contexto técnico
 
-**Language/Version**: Java 21
-**Primary Dependencies**: Maven; JUnit Jupiter 5.10.2 para pruebas. No se requiere Spring Boot.
-**Storage**: Estado en memoria durante la vida de una instancia del servicio.
-**Testing**: Maven Surefire y JUnit Jupiter; `InventoryServiceTest` es la cobertura existente.
-**Target Platform**: JVM con Java 21.
-**Project Type**: Biblioteca/servicio Java en proceso, sin endpoints ni autenticación.
-**Performance Goals**: Mantener invariantes ante solicitudes concurrentes; no se especifica objetivo de rendimiento.
-**Constraints**: No modificar `com.store.inventory.api` ni la firma `Inventory.create(Clock, StockAlertListener)`. Vencimiento inclusivo (`now >= expiresAt`). Alertas calculadas sobre disponibilidad, con rearme solo tras reabastecimiento por encima de cinco.
-**Scale/Scope**: Una JVM e instancia en memoria; persistencia y coordinación multi-instancia están fuera del alcance.
+**Lenguaje y versión**: Java 21.
+**Dependencias principales**: Maven y JUnit Jupiter 5.10.2 para pruebas. No se requiere Spring Boot.
+**Almacenamiento**: Estado en memoria durante la vida de la instancia.
+**Pruebas**: Maven Surefire y JUnit Jupiter; `InventoryServiceTest` es la cobertura existente.
+**Plataforma objetivo**: JVM con Java 21.
+**Tipo de proyecto**: Biblioteca/servicio Java en proceso, sin endpoints ni autenticación.
+**Objetivos de rendimiento**: Mantener las invariantes de inventario ante solicitudes concurrentes; no se especifica una meta de rendimiento.
+**Restricciones**: No modificar `com.store.inventory.api` ni cambiar la firma `Inventory.create(Clock, StockAlertListener)`. El vencimiento es inclusivo (`now >= expiresAt`). Las alertas usan disponibilidad, descontando las reservas y ventas; solo se rearman cuando `addStock` supera cinco unidades disponibles.
+**Escala y alcance**: Una JVM y una instancia en memoria; persistencia y coordinación entre instancias quedan fuera del alcance.
 
-## Constitution Check
+## Revisión de la constitución
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
-
-| Gate | Result | Notes |
+| Criterio | Resultado | Notas |
 |---|---|---|
-| Conservar contrato público y fábrica | PASS | El diseño mantiene intactos los archivos API existentes y la firma de fábrica. |
-| Java 21, Maven y memoria; sin endpoints | PASS | Coincide con constitución, `pom.xml` y alcance de `spec.md`. Spring Boot/controladores no son requisitos. |
-| Ciclo de reserva, políticas conocidas y alertas desacopladas | PASS | Las reglas STANDARD, PRE_ORDER y FLASH_SALE y `StockAlertListener` se pueden implementar con el contrato actual. |
-| Admitir nuevas categorías sin cambiar API protegida | ERROR | `ProductCategory` es un enum cerrado y `registerProduct` solo acepta ese enum. No se puede registrar una categoría nueva en tiempo de ejecución sin cambiar el API protegido o reinterpretar FR-008. |
-| Aprobación ligada al intento de reserva | ERROR | La interfaz existente solo expone `confirm(orderId)` y `Reservation` no contiene intento. Un contrato adicional es técnicamente posible, pero `Inventory.create` devuelve solo `InventoryService` y el spec no define cómo el consumidor obtiene el ID y entrega la aprobación. |
-| Sin decisiones de dominio pendientes | ERROR | FR-008 y FR-009 requieren aclaración/ajuste antes de implementar. No se descartan silenciosamente. |
+| Conservar API protegido y firma de fábrica actual | PASS | No se cambia ningún archivo de `com.store.inventory.api`; se conserva `Inventory.create(Clock, StockAlertListener)`. |
+| Java 21, Maven, memoria y ausencia de HTTP | PASS | Coincide con la constitución, `pom.xml` y `spec.md`. |
+| Categorías dentro del alcance | PASS | Solo existen las tres categorías protegidas. Sus políticas se configuran mediante un tipo público adicional fuera del paquete protegido. |
+| Ciclo de reserva y confirmación por `orderId` | PASS | Se conserva un solo intento activo por pedido; la aprobación confirma el intento activo más reciente, incluso si el aviso llegó tarde. |
+| Alertas desacopladas y fallo del listener | PASS | Se usa `StockAlertListener`; una excepción de ejecución del listener no revierte el inventario ni provoca reintento antes del reabastecimiento. |
+| Sin decisiones funcionales pendientes | PASS | Las decisiones antes pendientes de categorías, aprobación y errores de alertas están registradas en `spec.md`. |
 
-La investigación y el diseño documental continúan para hacer concretos los puntos de decisión. El gate ERROR debe resolverse en los artefactos rectores antes de comenzar cambios de código, conforme a la constitución.
-
-## Project Structure
+## Estructura del proyecto
 
 ### Documentación de esta funcionalidad
 
@@ -51,41 +47,42 @@ specs/001-reservas-inventario/
 
 ```text
 src/main/java/com/store/inventory/
-├── Inventory.java
-├── api/                         # contrato existente, protegido
+├── Inventory.java                         # fábrica existente y sobrecarga de configuración
+├── InventoryPolicies.java                 # políticas configurables para categorías existentes
+├── api/                                   # contrato protegido, sin cambios
 └── internal/
-    ├── service/                 # operaciones de inventario y políticas
-    ├── model/                   # estado del producto, intento de reserva
-    └── payment/                 # contrato adicional de aprobación, pendiente de decisión
+    ├── service/                           # operaciones y ciclo de vida de reservas
+    ├── model/                             # producto, stock e intentos internos
+    └── policy/                            # valores predeterminados y validación de políticas
 
 src/test/java/com/store/inventory/
 └── InventoryServiceTest.java
 ```
 
-**Structure Decision**: Mantener el único módulo Maven y las clases internas bajo `com.store.inventory.internal`. Separar el estado coordinado del flujo de servicio y de las políticas solo donde el dominio lo requiera. No crear capa HTTP.
+**Decisión estructural**: Mantener el único módulo Maven. Añadir solo el tipo de configuración de políticas necesario para FR-008 fuera de `api`; conservar la fábrica protegida por contrato. Las mutaciones de stock y reservas se coordinarán atómicamente por producto. La notificación se hará después de actualizar el estado y su excepción de ejecución se aislará.
 
-## Phase 0: Research
+## Fase 0: investigación
 
-Hallazgos y decisiones están en [research.md](research.md). Las decisiones técnicas verificables quedaron resueltas mediante inspección del repositorio. Las incompatibilidades FR-008 y FR-009 se registran como decisiones de producto pendientes, no como supuestos de implementación.
+Las decisiones y alternativas están en [research.md](research.md). El repositorio confirma Java 21, Maven, el contrato protegido, la fábrica y el listener. No hay dependencias tecnológicas desconocidas.
 
-## Phase 1: Design & Contracts
+## Fase 1: diseño y contratos
 
-- [Modelo de datos](data-model.md): producto, inventario, intento, política y estado de alerta.
-- [Contrato de servicio](contracts/inventory-service.md): interfaz actual y extensión necesaria aún por acordar.
-- [Guía de validación](quickstart.md): escenarios de aceptación ejecutables una vez resueltas las decisiones de contrato.
+- [Modelo de datos](data-model.md): producto, pedido, intento interno, política y estado de alerta.
+- [Contrato del servicio](contracts/inventory-service.md): contrato protegido y extensión aditiva para configurar políticas.
+- [Guía de validación](quickstart.md): escenarios de reserva, vencimiento, aprobación tardía, configuración y alertas.
 
-## Constitution Check (post-design)
+## Revisión de la constitución después del diseño
 
-| Gate | Result | Notes |
+| Criterio | Resultado | Notas |
 |---|---|---|
-| Arquitectura y dependencias | PASS | Diseño en memoria, Java 21/Maven, sin framework web. |
-| API protegido | PASS | No se propone editar tipos existentes en `com.store.inventory.api`. |
-| FR-008 categorías extensibles | ERROR | Enum cerrado no permite categorías nuevas con la firma actual. |
-| FR-009 aprobación de intento específico | ERROR | Hace falta definir cómo se expone el intento y cómo el procesador de pago lo devuelve. |
+| API protegido y fábrica original intactos | PASS | La configuración se agrega mediante una sobrecarga fuera del paquete protegido. |
+| Reglas de categoría del alcance acordado | PASS | Solo se configuran `STANDARD`, `PRE_ORDER` y `FLASH_SALE`; sus valores predeterminados cumplen la especificación. |
+| Aprobación tardía | PASS | La resolución por `orderId` selecciona la reserva activa más reciente, como ordena FR-009. |
+| Error de alerta | PASS | Se conserva el cambio y se considera intentado el aviso; no se rearma hasta superar el umbral mediante reabastecimiento. |
 
-## Complexity Tracking
+## Registro de complejidad
 
-| Issue | Why needed | Simpler alternative rejected because |
+| Elemento | Por qué se necesita | Alternativa más sencilla descartada |
 |---|---|---|
-| Identidad de intento además de `orderId` | Evita que una aprobación tardía confirme una reserva posterior del mismo pedido. | `confirm(orderId)` no diferencia generaciones. La forma pública de exponerla está pendiente. |
-| Registro de políticas por categoría | Mantiene plazos y límites fuera del mecanismo de reserva. | Condicionales rígidos no cubren políticas estacionales; aun así, el enum protegido impide incorporar nuevas claves de categoría. |
+| Tipo público de políticas y sobrecarga de fábrica | Permiten configurar duraciones y límites de las tres categorías sin modificar el paquete protegido. | Valores internos fijos no cumplirían la configuración acordada en FR-008. |
+| Estado interno de intentos sucesivos | Distingue vencimientos, evita liberar o vender unidades dos veces y permite seleccionar la reserva activa más reciente por pedido. | Guardar solo el último estado perdería el historial necesario para procesar correctamente vencimientos y reintentos. |

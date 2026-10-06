@@ -1,37 +1,37 @@
-# Research: Reservas de inventario
+# Investigación: Reservas de inventario
 
-## Stack y punto de entrada
+## Plataforma y punto de entrada
 
-- **Decision**: Java 21 y Maven; conservar `Inventory.create(Clock, StockAlertListener)` como entrada y no añadir Spring Boot ni HTTP.
-- **Rationale**: `pom.xml` fija `maven.compiler.release` en 21 y ya contiene JUnit Jupiter. La constitución IV vigente pide Java 21, Maven y memoria, y dice explícitamente que Spring Boot y controladores HTTP no son requisitos. `README.md` describe una biblioteca consumida por la aplicación móvil.
-- **Alternatives considered**: Añadir Spring Boot/controladores. Descartado porque aumenta el alcance sin requisito de endpoint y contradice la constitución actual.
+- **Decisión**: Usar Java 21 y Maven; conservar `Inventory.create(Clock, StockAlertListener)` como fábrica vigente, sin agregar Spring Boot ni HTTP.
+- **Fundamento**: `pom.xml` fija el compilador en Java 21 y contiene JUnit Jupiter. La constitución vigente pide Java 21, Maven y memoria, y establece que Spring Boot y controladores HTTP no son requisitos. El repositorio describe una biblioteca consumida por la aplicación móvil.
+- **Alternativas consideradas**: Añadir Spring Boot o controladores. Se descartan porque no hay endpoints requeridos y ampliarían el alcance.
 
-## Almacenamiento y concurrencia
+## Estado y concurrencia
 
-- **Decision**: Mantener productos, cantidades vendidas, reservas activas y estado de alerta en memoria de la instancia; coordinar las mutaciones que afectan al mismo inventario de forma atómica.
-- **Rationale**: El alcance declara una JVM y excluye persistencia y coordinación multi-instancia. La reserva y la disponibilidad deben actualizarse juntas para que solicitudes concurrentes no sobrevendan.
-- **Alternatives considered**: Base de datos o coordinación distribuida. Fuera del alcance de esta iteración, aunque será necesaria antes de ejecutar varias instancias.
+- **Decisión**: Mantener productos, unidades vendidas, intentos de reserva y estado de alerta en memoria. Coordinar de forma atómica las mutaciones que afectan el mismo producto.
+- **Fundamento**: La constitución define una sola instancia y excluye persistencia. La reserva debe comprobar y actualizar la disponibilidad en una misma sección coordinada para impedir sobreventas concurrentes.
+- **Alternativas consideradas**: Base de datos o coordinación distribuida. Quedan fuera de esta iteración y serán necesarias antes de ejecutar varias instancias.
 
 ## Políticas de categoría
 
-- **Decision**: Representar plazo y límite como una política asociada a cada categoría, en vez de mezclar esas reglas con el ciclo de reserva.
-- **Rationale**: Mantiene las reglas actuales independientes y facilita añadir comportamiento cuando el tipo de categoría lo permita.
-- **Alternatives considered**: `switch` fijo por las tres constantes actuales. No satisface FR-008.
-- **Unresolved**: `ProductCategory` es un enum protegido con exactamente tres valores y el registro público recibe ese enum. No hay forma de suministrar una categoría estacional nueva a la firma actual. Debe acordarse si FR-008 se limita a las categorías ya declaradas con políticas reemplazables, o si se autoriza cambiar el contrato protegido.
+- **Decisión**: Representar duración y límite mediante políticas inmutables para las tres categorías existentes. Añadir `InventoryPolicies` y una sobrecarga de `Inventory.create` que reciba la configuración completa; la fábrica actual usará las reglas predeterminadas.
+- **Fundamento**: La decisión registrada en `spec.md` limita esta funcionalidad al enum protegido, pero permite configurar sus reglas. Una configuración aditiva fuera del paquete `api` cumple ese requisito sin alterar sus archivos ni la firma existente.
+- **Alternativas consideradas**: Dejar solo constantes internas. No permitiría configurar reglas como requiere FR-008. Modificar `ProductCategory` o `InventoryService` está prohibido por la constitución.
+- **Validación propuesta**: La configuración debe incluir las tres categorías exactamente una vez; cada duración y cada límite definido debe ser positivo. `STANDARD` y `PRE_ORDER` usan límite sin máximo de forma predeterminada, y `FLASH_SALE` usa máximo dos.
 
-## Identidad de aprobación de pago
+## Aprobación de pagos
 
-- **Decision**: Toda aprobación nueva debe nombrar el intento único, junto con el pedido, para impedir aprobar accidentalmente un intento posterior.
-- **Rationale**: El mismo `orderId` puede volver a reservarse tras vencer el intento previo, y callbacks tardíos deben quedar vinculados a su generación original.
-- **Alternatives considered**: `confirm(orderId)` existente. No permite distinguir intentos y puede confirmar una reserva nueva tras una aprobación tardía.
-- **Unresolved**: `Reservation` no expone intento y la fábrica devuelve `InventoryService`. Hay que definir la superficie pública para que el cliente obtenga y presente el ID de intento sin modificar los tipos protegidos existentes.
+- **Decisión**: La aprobación se resuelve con `orderId`; cuando hay una reserva activa, se confirma la más reciente, aunque la aprobación recibida pertenezca a un intento anterior vencido.
+- **Fundamento**: Esta es la decisión explícita de FR-009. Un pedido puede crear una nueva reserva tras vencer la anterior y la API protegida no distingue generaciones.
+- **Alternativas consideradas**: Exigir un identificador de intento específico. Se descarta porque contradice la aclaración aceptada y exigiría exponer un dato que no está en la API protegida.
+- **Comportamiento sin reserva activa**: Se conserva el contrato existente, que indica `IllegalStateException` cuando no hay reserva activa.
 
-## Alertas de existencias
+## Alertas y fallos del receptor
 
-- **Decision**: Conservar la notificación mediante `StockAlertListener`; disparar al cruzar el umbral considerando stock menos reservas activas y rearmar solo al agregar stock y superar cinco.
-- **Rationale**: Cumple el contrato desacoplado existente y la regla de rearme de la especificación.
-- **Alternatives considered**: Integrar correo en el dominio. Descartado porque acoplaría inventario a un canal concreto.
+- **Decisión**: Emitir avisos mediante `StockAlertListener`, marcar el umbral como intentado y completar el cambio de inventario aunque el listener lance una excepción de ejecución. No reintentar hasta que `addStock` eleve la disponibilidad por encima de cinco.
+- **Fundamento**: La regla evita que una falla de notificación haga que una operación de inventario parezca fallida o se repita. El estado de alerta permanece desacoplado del canal.
+- **Alternativas consideradas**: Revertir inventario, propagar la excepción o reintentar en cada operación. La especificación rechaza las dos primeras y el reintento podría duplicar una notificación que el listener alcanzó a procesar antes del error.
 
-## Resultado de la investigación
+## Resultado
 
-Los hechos de stack y despliegue están resueltos por el repositorio y la constitución vigente. FR-008 y FR-009 siguen como decisiones de contrato necesarias antes de implementar; no hay una solución que satisfaga literalmente ambos requisitos y mantenga intacto el API actual sin acordar una superficie adicional.
+Las decisiones funcionales de categorías, aprobación tardía y errores de alerta están resueltas en la especificación. La propuesta conserva el contrato protegido, añade solo la superficie de configuración requerida y no introduce dependencias de ejecución nuevas.
