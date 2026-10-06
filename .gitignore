@@ -1,0 +1,16 @@
+# Java y Maven
+target/
+build/
+.gradle/
+*.class
+*.jar
+
+# Herramientas de desarrollo
+.idea/
+.vscode/
+
+# Archivos temporales del sistema
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

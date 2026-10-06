@@ -12,8 +12,8 @@
 
 **Propósito**: Confirmar la configuración actual de Maven y el contrato protegido del API.
 
-- [ ] T001 Verificar la configuración de Java 21 y JUnit Jupiter 5.10.2 en `pom.xml`
-- [ ] T002 Identificar los contratos del servicio y los archivos protegidos existentes bajo `src/main/java/com/store/inventory/api/`
+- [X] T001 Verificar la configuración de Java 21 y JUnit Jupiter 5.10.2 en `pom.xml`
+- [X] T002 Identificar los contratos del servicio y los archivos protegidos existentes bajo `src/main/java/com/store/inventory/api/`
 
 ---
 
@@ -21,9 +21,9 @@
 
 **Propósito**: Establecer el estado compartido del inventario en memoria y la coordinación atómica antes de implementar las historias.
 
-- [ ] T003 [P] Crear `ProductState.java` y `ReservationAttempt.java` en `src/main/java/com/store/inventory/internal/model/`
-- [ ] T004 [P] Crear la coordinación por producto y el cálculo de existencias disponibles en `src/main/java/com/store/inventory/internal/service/ProductInventory.java`
-- [ ] T005 Conectar la construcción del servicio interno desde `src/main/java/com/store/inventory/Inventory.java` y conservar `Inventory.create(Clock, StockAlertListener)`
+- [X] T003 [P] Crear `ProductState.java` y `ReservationAttempt.java` en `src/main/java/com/store/inventory/internal/model/`
+- [X] T004 [P] Crear la coordinación por producto y el cálculo de existencias disponibles en `src/main/java/com/store/inventory/internal/service/ProductInventory.java`
+- [X] T005 Conectar la construcción del servicio interno desde `src/main/java/com/store/inventory/Inventory.java` y conservar `Inventory.create(Clock, StockAlertListener)`
 
 **Punto de control**: El estado y la construcción compartidos están listos. No modificar archivos de `src/main/java/com/store/inventory/api/`.
 
@@ -37,17 +37,17 @@
 
 ### Pruebas de la historia de usuario 1
 
-- [ ] T006 [US1] Agregar pruebas de reserva, falta de existencias, cantidad inválida y reintento de pedido activo en `src/test/java/com/store/inventory/InventoryServiceTest.java`
-- [ ] T007 [US1] Agregar pruebas de reservas concurrentes y procesamiento independiente de líneas del carrito en `src/test/java/com/store/inventory/InventoryServiceTest.java`
-- [ ] T008 [US1] Agregar pruebas de valores predeterminados por categoría y validación de políticas configurables en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T006 [US1] Agregar pruebas de reserva, falta de existencias, cantidad inválida y reintento de pedido activo en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T007 [US1] Agregar pruebas de reservas concurrentes y procesamiento independiente de líneas del carrito en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T008 [US1] Agregar pruebas de valores predeterminados por categoría y validación de políticas configurables en `src/test/java/com/store/inventory/InventoryServiceTest.java`
 
 ### Implementación de la historia de usuario 1
 
-- [ ] T009 [P] [US1] Implementar `CategoryPolicy` con una `Duration` positiva y un máximo `OptionalInt` que, si está presente, debe ser positivo en `src/main/java/com/store/inventory/CategoryPolicy.java`
-- [ ] T010 [US1] Implementar `InventoryPolicies` como mapa inmutable con exactamente una política para cada `ProductCategory` en `src/main/java/com/store/inventory/InventoryPolicies.java`
-- [ ] T011 [US1] Implementar las políticas predeterminadas (`STANDARD`: 15 minutos/sin máximo; `PRE_ORDER`: 24 horas/sin máximo; `FLASH_SALE`: 5 minutos/máximo 2) y la sobrecarga de fábrica configurable en `src/main/java/com/store/inventory/Inventory.java`
-- [ ] T012 [US1] Implementar el registro de productos, la adición de existencias positivas, la consulta de existencias disponibles y la reserva atómica completa con reintentos de pedidos activos en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
-- [ ] T013 [US1] Rechazar solicitudes que excedan el límite de la categoría o las existencias disponibles, sin crear reservas parciales, en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T009 [P] [US1] Implementar `CategoryPolicy` con una `Duration` positiva y un máximo `OptionalInt` que, si está presente, debe ser positivo en `src/main/java/com/store/inventory/CategoryPolicy.java`
+- [X] T010 [US1] Implementar `InventoryPolicies` como mapa inmutable con exactamente una política para cada `ProductCategory` en `src/main/java/com/store/inventory/InventoryPolicies.java`
+- [X] T011 [US1] Implementar las políticas predeterminadas (`STANDARD`: 15 minutos/sin máximo; `PRE_ORDER`: 24 horas/sin máximo; `FLASH_SALE`: 5 minutos/máximo 2) y la sobrecarga de fábrica configurable en `src/main/java/com/store/inventory/Inventory.java`
+- [X] T012 [US1] Implementar el registro de productos, la adición de existencias positivas, la consulta de existencias disponibles y la reserva atómica completa con reintentos de pedidos activos en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T013 [US1] Rechazar solicitudes que excedan el límite de la categoría o las existencias disponibles, sin crear reservas parciales, en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
 
 **Punto de control**: La historia 1 permite reservar existencias por separado y aplica las duraciones y límites configurados para cada categoría.
 
@@ -61,14 +61,14 @@
 
 ### Pruebas de la historia de usuario 2
 
-- [ ] T014 [US2] Agregar pruebas de liberación en el instante exacto de vencimiento, nuevo intento con el mismo pedido y liberación repetida en `src/test/java/com/store/inventory/InventoryServiceTest.java`
-- [ ] T015 [US2] Agregar pruebas de confirmación, aprobación tardía del intento activo más reciente, ausencia de reserva activa y confirmación repetida en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T014 [US2] Agregar pruebas de liberación en el instante exacto de vencimiento, nuevo intento con el mismo pedido y liberación repetida en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T015 [US2] Agregar pruebas de confirmación, aprobación tardía del intento activo más reciente, ausencia de reserva activa y confirmación repetida en `src/test/java/com/store/inventory/InventoryServiceTest.java`
 
 ### Implementación de la historia de usuario 2
 
-- [ ] T016 [US2] Implementar el vencimiento inclusivo (`now >= expiresAt`) y liberar las unidades reservadas una sola vez en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
-- [ ] T017 [US2] Permitir un nuevo intento de reserva con el mismo `orderId` después de vencer el intento anterior en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
-- [ ] T018 [US2] Implementar `confirm(orderId)` para confirmar el intento activo más reciente, contabilizar sus unidades vendidas una sola vez y lanzar `IllegalStateException` si no hay un intento activo en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T016 [US2] Implementar el vencimiento inclusivo (`now >= expiresAt`) y liberar las unidades reservadas una sola vez en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T017 [US2] Permitir un nuevo intento de reserva con el mismo `orderId` después de vencer el intento anterior en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T018 [US2] Implementar `confirm(orderId)` para confirmar el intento activo más reciente, contabilizar sus unidades vendidas una sola vez y lanzar `IllegalStateException` si no hay un intento activo en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
 
 **Punto de control**: El vencimiento y la confirmación preservan las invariantes de existencias ante reintentos.
 
@@ -82,14 +82,14 @@
 
 ### Pruebas de la historia de usuario 3
 
-- [ ] T019 [US3] Agregar pruebas de cruce del umbral, supresión de avisos repetidos y rearme por reabastecimiento en `src/test/java/com/store/inventory/InventoryServiceTest.java`
-- [ ] T020 [US3] Agregar pruebas del comportamiento ante una excepción de ejecución del listener en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T019 [US3] Agregar pruebas de cruce del umbral, supresión de avisos repetidos y rearme por reabastecimiento en `src/test/java/com/store/inventory/InventoryServiceTest.java`
+- [X] T020 [US3] Agregar pruebas del comportamiento ante una excepción de ejecución del listener en `src/test/java/com/store/inventory/InventoryServiceTest.java`
 
 ### Implementación de la historia de usuario 3
 
-- [ ] T021 [US3] Implementar el estado de aviso armado por SKU y detectar cruces de disponibilidad tras reservar o confirmar en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
-- [ ] T022 [US3] Rearmar el aviso de existencias bajas solo cuando `addStock` eleve las existencias disponibles por encima de cinco en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
-- [ ] T023 [US3] Aislar las excepciones de ejecución del listener después de marcar el aviso como intentado y conservar la mutación de inventario completada en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T021 [US3] Implementar el estado de aviso armado por SKU y detectar cruces de disponibilidad cuando una reserva reduce las existencias disponibles en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T022 [US3] Rearmar el aviso de existencias bajas solo cuando `addStock` eleve las existencias disponibles por encima de cinco en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
+- [X] T023 [US3] Aislar las excepciones de ejecución del listener después de marcar el aviso como intentado y conservar la mutación de inventario completada en `src/main/java/com/store/inventory/internal/service/InventoryServiceImpl.java`
 
 **Punto de control**: Los avisos usan `StockAlertListener` y su comportamiento se mantiene estable si el listener falla.
 
@@ -99,9 +99,11 @@
 
 **Propósito**: Verificar el incremento completo frente al comportamiento documentado y las restricciones del repositorio.
 
-- [ ] T024 [P] Revisar el API público resultante y confirmar que no se modificó ningún archivo bajo `src/main/java/com/store/inventory/api/`
-- [ ] T025 Ejecutar el comando de validación de Maven `mvn test` desde la raíz del repositorio
-- [ ] T026 Revisar la implementación frente a `specs/001-reservas-inventario/quickstart.md` y actualizar `specs/001-reservas-inventario/quickstart.md` solo si se necesita corregir algún detalle
+- [X] T024 [P] Revisar el API público resultante y confirmar que no se modificó ningún archivo bajo `src/main/java/com/store/inventory/api/`
+- [X] T025 Ejecutar el comando de validación de Maven `mvn test` desde la raíz del repositorio
+- [X] T026 Revisar la implementación frente a `specs/001-reservas-inventario/quickstart.md` y actualizar `specs/001-reservas-inventario/quickstart.md` solo si se necesita corregir algún detalle
+- [X] T027 Documentar los supuestos, exclusiones y preparativos previos a producción en `DECISIONS.md`, según las instrucciones de `README.md`
+- [X] T028 Crear reglas de exclusión para los artefactos generados por Maven y Java en `.gitignore`
 
 ---
 
