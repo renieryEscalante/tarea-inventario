@@ -1,30 +1,29 @@
-# Quickstart: Reservas de inventario
+# Quickstart: validar reservas de inventario
 
-## Prerequisites
+## Prerrequisitos
 
-- Java 21
+- JDK 21
 - Maven
 
-## Validate the feature
+## Validación
 
-From the repository root, run:
+Desde la raíz del repositorio:
 
 ```bash
 mvn test
 ```
 
-Expected: Maven compiles against Java 21 and all existing and feature tests pass.
+El resultado esperado es compilación exitosa y pruebas verdes, incluida `InventoryServiceTest`.
 
-## Behavioral scenarios to cover
+## Escenarios de aceptación para la cobertura de la funcionalidad
 
-1. Register a product, add stock, reserve units, and verify available stock falls by the reserved quantity.
-2. Attempt reservations concurrently whose combined quantity exceeds stock; verify total active plus sold units never exceed on-hand stock and at least one request is rejected.
-3. Retry the same order while active; verify no second reservation is created. Advance a fixed clock to expiry, release it, then retry and verify a new attempt ID is created if stock is available.
-4. Confirm an attempt before expiry; verify available stock remains reduced as sold units. Repeat confirmation and verify no second adjustment.
-5. Expire attempt A, create attempt B with the same order ID, then approve attempt A; verify B remains active and inventory is unchanged.
-6. Exercise all category payment windows and the `FLASH_SALE` two-unit maximum using a fixed clock.
-7. Cross the five-unit available-stock threshold and verify one listener call; make further reductions and verify silence; restock above five and cross again to verify a second call.
-8. Verify invalid quantities, unknown products, insufficient stock, and over-limit orders fail without partial stock changes.
+La suite debe validar estos resultados mediante `InventoryService` y un `Clock` controlable:
 
-The exact attempt-aware approval interface and the resolution of the category extensibility gate must be agreed before implementing these scenarios.
+1. Dos reservas concurrentes por el mismo stock nunca asignan más unidades de las disponibles; una solicitud no satisfecha falla sin reserva parcial.
+2. Un reintento con el mismo pedido conserva una sola reserva activa. Al vencer el intento y si hay stock, el mismo pedido crea una generación nueva.
+3. Una aprobación dentro del plazo confirma unidades; vencimiento inclusivo libera unidades; callbacks o liberaciones repetidas no alteran el estado dos veces.
+4. Las categorías actuales usan sus plazos y límite documentados.
+5. El listener recibe una sola alerta mientras disponibilidad siga en cinco o menos; un reabastecimiento por encima de cinco rearma el aviso para el siguiente cruce.
+6. El fallo de reserva para una línea del carrito no cambia la disponibilidad de líneas independientes.
 
+Consulte el [contrato](contracts/inventory-service.md) y el [modelo de datos](data-model.md). Los escenarios que requieren categorías nuevas o aprobación por ID de intento quedan condicionados a resolver los dos gates ERROR del plan.

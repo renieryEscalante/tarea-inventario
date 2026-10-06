@@ -1,57 +1,35 @@
-# Data Model: Reservas de inventario
+# Modelo de datos: Reservas de inventario
 
-## Product
+## Producto inventariable
 
-Represents one registered SKU and its inventory state.
+- **Identidad**: `sku` único.
+- **Atributos**: categoría (`ProductCategory`), unidades físicas agregadas, unidades vendidas, intentos de reserva asociados y estado de alerta.
+- **Regla de disponibilidad**: `stock físico - unidades vendidas - suma de reservas activas`; nunca menor que cero.
+- **Validación**: registrar antes de agregar stock; adiciones deben ser positivas. Una categoría nueva requiere resolver FR-008 y el límite del enum protegido.
 
-| Field | Type | Rules |
-|---|---|---|
-| `sku` | String | Stable key; registered before stock can be added. |
-| `category` | `ProductCategory` | Required; selects a reservation policy. |
-| `onHand` | non-negative integer | Increased only by valid restock operations. |
-| `sold` | non-negative integer | Increased when an active reservation is confirmed. |
-| `activeReservationUnits` | non-negative integer | Sum of units in active, unexpired reservation attempts. |
-| `lowStockAlertLatched` | boolean | Set after alerting at available stock <= 5; cleared only by a restock that leaves available stock > 5. |
+## Pedido
 
-Available units are `onHand - sold - activeReservationUnits`; this value must never be negative. Unknown SKUs report zero available.
+- **Identidad**: `orderId`, estable entre reintentos.
+- **Relación**: un pedido en esta interfaz corresponde a un solo SKU y cantidad; cada línea de carrito es independiente.
+- **Idempotencia**: reenvío durante un intento activo devuelve ese intento sin reservar unidades otra vez. Tras vencer, puede abrir otro intento con el mismo pedido si hay stock.
 
-## Order identity
+## Intento de reserva
 
-An order ID is supplied by the caller and is stable across retries. At most one non-expired reservation attempt is active for a given order ID. A rejected request creates no attempt. If the previous attempt has expired and been released, the same order ID may create a new attempt if stock allows.
+- **Identidad**: `reservationAttemptId` único y distinto entre generaciones del mismo pedido.
+- **Atributos**: `orderId`, SKU, cantidad positiva, instante de creación, instante de vencimiento y estado.
+- **Estados**: `ACTIVE`, `EXPIRED/RELEASED`, `CONFIRMED`.
+- **Transiciones**: `ACTIVE → CONFIRMED` si se aprueba antes del vencimiento; `ACTIVE → EXPIRED/RELEASED` al llegar a `expiresAt` sin aprobación. Los estados finales no se revierten.
+- **Validaciones**: no reservar parcialmente; aplicar el máximo de categoría si existe; en `now >= expiresAt` se considera vencida. Confirmación repetida o liberación repetida no cambia cantidades por segunda vez.
+- **Pendiente**: la interfaz protegida `Reservation` no incluye `reservationAttemptId`; la extensión que lo expone debe acordarse.
 
-## Reservation attempt
+## Política de categoría
 
-| Field | Type | Rules |
-|---|---|---|
-| `attemptId` | unique opaque identifier | New value for each successful reservation generation; payment approval must name it. |
-| `orderId` | String | Caller-supplied stable identity. |
-| `sku` | String | Registered product. |
-| `quantity` | positive integer | Must satisfy category policy and available stock. |
-| `createdAt` | Instant | Obtained from injected `Clock`. |
-| `expiresAt` | Instant | `createdAt + category payment window`. |
-| `status` | enum | `ACTIVE`, `RELEASED`, or `CONFIRMED`; terminal states cannot transition again. |
+- **Atributos**: duración de pago y máximo opcional de unidades por pedido.
+- **Valores actuales**: `STANDARD` = 15 minutos/sin máximo; `PRE_ORDER` = 24 horas/sin máximo; `FLASH_SALE` = 5 minutos/máximo 2.
+- **Pendiente**: el enum protegido impide representar nuevas categorías, aunque el requisito pide admitirlas.
 
-Transitions:
+## Estado de alerta
 
-```text
-ACTIVE --confirm matching attempt before expiry--> CONFIRMED
-ACTIVE --time reaches expiresAt / expiration sweep--> RELEASED
-RELEASED and CONFIRMED are terminal
-```
-
-Confirming or releasing an attempt is idempotent. A stale approval for a released attempt does not affect a later attempt with the same order ID.
-
-## Category policy
-
-| Category | Payment window | Maximum units per order |
-|---|---:|---:|
-| `STANDARD` | 15 minutes | Unbounded by category |
-| `PRE_ORDER` | 24 hours | Unbounded by category |
-| `FLASH_SALE` | 5 minutes | 2 |
-
-The policy should be data-driven internally. Adding a category remains blocked by the current immutable public enum and registration signature (see plan gate).
-
-## Low-stock alert state
-
-An alert is associated with a SKU and reports its available unit count at the threshold transition. When availability first reaches five or less while unlatched, notify `StockAlertListener` and latch. Suppress further alerts while latched. A valid `addStock` operation that leaves availability above five clears the latch, allowing a later crossing to notify again.
-
+- **Ámbito**: por SKU.
+- **Regla**: emitir cuando disponibilidad pasa a cinco o menos y el aviso está armado; después de emitir queda desarmado. Solo una operación `addStock` que deje más de cinco unidades disponibles lo rearma.
+- **Salida**: `StockAlertListener.onLowStock(sku, availableUnits)`.

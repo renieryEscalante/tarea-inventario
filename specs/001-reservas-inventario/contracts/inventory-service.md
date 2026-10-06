@@ -1,37 +1,27 @@
-# Inventory Service Contract
+# Contrato: servicio de inventario
 
-## Existing public contract
+## Interfaz protegida existente
 
-The public Java contract remains `com.store.inventory.api.InventoryService`, created through `Inventory.create(Clock, StockAlertListener)`. The API package and factory signature are immutable for this feature.
+Paquete: `com.store.inventory.api` (no modificar).
 
-| Operation | Contract |
-|---|---|
-| `registerProduct(sku, category)` | Register a product before stock operations. |
-| `addStock(sku, quantity)` | Add positive stock; reject non-positive quantity or unregistered SKU. This is the only restock/rearm operation. |
-| `reserve(orderId, sku, quantity)` | Atomically create or return the active reservation for an idempotent retry; reject invalid quantity, category limit, or insufficient stock without partial allocation. |
-| `confirm(orderId)` | Compatibility operation confirming the active reservation for the order. Does not carry enough identity to distinguish a stale payment callback after order ID reuse. |
-| `available(sku)` | Return on-hand less sold and active reservations; zero for unknown SKU. |
+- `InventoryService.registerProduct(sku, category)` registra categoría y producto.
+- `InventoryService.addStock(sku, quantity)` añade unidades positivas.
+- `InventoryService.reserve(orderId, sku, quantity)` reserva una línea de pedido; cantidades inválidas, límite excedido o stock insuficiente fallan sin reserva parcial.
+- `InventoryService.confirm(orderId)` confirma según el contrato actual cuando hay reserva activa.
+- `InventoryService.available(sku)` devuelve unidades reservables.
+- `Inventory.create(Clock, StockAlertListener)` construye el servicio.
+- `StockAlertListener.onLowStock(sku, availableUnits)` recibe avisos sin imponer un canal.
 
-Reservations expire at `now >= expiresAt`. Reservation and release/confirmation transitions must not double-adjust inventory.
+## Reglas observables
 
-## Attempt-aware payment approval extension
+- Reintentar un `orderId` con reserva activa no reserva dos veces.
+- El vencimiento es inclusivo: `now >= expiresAt` libera la reserva.
+- Las duraciones son 15 minutos, 24 horas y 5 minutos para `STANDARD`, `PRE_ORDER` y `FLASH_SALE`; máximo dos para `FLASH_SALE`.
+- El aviso se emite al alcanzar cinco o menos unidades disponibles, se suprime hasta que `addStock` supere cinco.
+- Las líneas de carrito se procesan como pedidos independientes.
 
-Implementation-owned contract: `com.store.inventory.internal.payment.PaymentApprovalService` (name/package to be finalized during implementation).
+## Decisiones de superficie pública pendientes
 
-```text
-confirm(orderId, attemptId) -> outcome
-```
+FR-009 requiere una operación de aprobación que reciba `orderId` y `reservationAttemptId`, así como una forma de devolver ese ID al consumidor al crear la reserva. La API actual no ofrece ninguna de las dos. Una interfaz adicional pública y una operación explícita de creación/aprobación de intentos podría mantener los archivos existentes, pero debe definirse y aprobarse en `spec.md` antes de implementación.
 
-The caller must provide both identifiers from the reservation response. The operation confirms only the matching active attempt before expiration. A missing, expired, released, or mismatched attempt is not allowed to confirm a later attempt with the same order ID. Repeated approval of an already confirmed attempt is idempotent.
-
-This extension is necessary to meet the clarified late-payment requirement without changing `InventoryService`. The payment integration itself remains outside scope.
-
-## Alert listener
-
-`StockAlertListener.onLowStock(sku, availableUnits)` is invoked once when a product first reaches <= 5 available units. It is rearmed only by a restock that raises available units above 5. Delivery channel remains the listener implementation's responsibility.
-
-## Boundaries
-
-- No HTTP endpoints, authentication, or payment gateway.
-- Category values are constrained by the existing public enum. FR-008 needs a compatible public extension or spec change before it can be satisfied.
-
+FR-008 requiere registrar categorías fuera del enum cerrado `ProductCategory`. Debe aclararse en `spec.md` y en la constitución si se conserva el enum protegido y se restringe el requisito a categorías predeclaradas, o si se permite extender el API. Ningún contrato de ejecución para categorías nuevas queda definido todavía.

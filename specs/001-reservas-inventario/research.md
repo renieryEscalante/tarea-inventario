@@ -1,54 +1,37 @@
 # Research: Reservas de inventario
 
-## Repository findings
+## Stack y punto de entrada
 
-### Java, build, and tests
+- **Decision**: Java 21 y Maven; conservar `Inventory.create(Clock, StockAlertListener)` como entrada y no añadir Spring Boot ni HTTP.
+- **Rationale**: `pom.xml` fija `maven.compiler.release` en 21 y ya contiene JUnit Jupiter. La constitución IV vigente pide Java 21, Maven y memoria, y dice explícitamente que Spring Boot y controladores HTTP no son requisitos. `README.md` describe una biblioteca consumida por la aplicación móvil.
+- **Alternatives considered**: Añadir Spring Boot/controladores. Descartado porque aumenta el alcance sin requisito de endpoint y contradice la constitución actual.
 
-- **Decision**: Plan for Java 21 and Maven; retain JUnit Jupiter/Surefire for validation.
-- **Rationale**: `pom.xml` sets `maven.compiler.release` to 21 and already declares JUnit Jupiter 5.10.2 and Maven Surefire 3.2.5.
-- **Alternatives considered**: Introducing another language or build system is unsupported by the existing repository and not required by the feature.
+## Almacenamiento y concurrencia
 
-### Service entry point and public boundary
+- **Decision**: Mantener productos, cantidades vendidas, reservas activas y estado de alerta en memoria de la instancia; coordinar las mutaciones que afectan al mismo inventario de forma atómica.
+- **Rationale**: El alcance declara una JVM y excluye persistencia y coordinación multi-instancia. La reserva y la disponibilidad deben actualizarse juntas para que solicitudes concurrentes no sobrevendan.
+- **Alternatives considered**: Base de datos o coordinación distribuida. Fuera del alcance de esta iteración, aunque será necesaria antes de ejecutar varias instancias.
 
-- **Decision**: Construct the implementation in `Inventory.create(Clock, StockAlertListener)` and keep implementation types outside `com.store.inventory.api`.
-- **Rationale**: The factory is the explicit construction seam and the constitution protects the API package and factory signature.
-- **Alternatives considered**: Modifying `InventoryService`, `Reservation`, `ProductCategory`, or the listener would break the stated compatibility constraint.
+## Políticas de categoría
 
-### State and concurrency
+- **Decision**: Representar plazo y límite como una política asociada a cada categoría, en vez de mezclar esas reglas con el ciclo de reserva.
+- **Rationale**: Mantiene las reglas actuales independientes y facilita añadir comportamiento cuando el tipo de categoría lo permita.
+- **Alternatives considered**: `switch` fijo por las tres constantes actuales. No satisface FR-008.
+- **Unresolved**: `ProductCategory` es un enum protegido con exactamente tres valores y el registro público recibe ese enum. No hay forma de suministrar una categoría estacional nueva a la firma actual. Debe acordarse si FR-008 se limita a las categorías ya declaradas con políticas reemplazables, o si se autoriza cambiar el contrato protegido.
 
-- **Decision**: Use a single in-memory repository with atomic per-operation state transitions. Store on-hand stock and sold quantity, and derive available stock after excluding active reservations.
-- **Rationale**: The repository is explicitly in-memory for this iteration; concurrent reserve calls must not assign more units than remain available. A single synchronization boundary is straightforward for this single-process scope.
-- **Alternatives considered**: Unsynchronized maps permit overselling; a database or distributed lock is out of scope and belongs to the later multi-instance migration.
+## Identidad de aprobación de pago
 
-### Time and expiration
+- **Decision**: Toda aprobación nueva debe nombrar el intento único, junto con el pedido, para impedir aprobar accidentalmente un intento posterior.
+- **Rationale**: El mismo `orderId` puede volver a reservarse tras vencer el intento previo, y callbacks tardíos deben quedar vinculados a su generación original.
+- **Alternatives considered**: `confirm(orderId)` existente. No permite distinguir intentos y puede confirmar una reserva nueva tras una aprobación tardía.
+- **Unresolved**: `Reservation` no expone intento y la fábrica devuelve `InventoryService`. Hay que definir la superficie pública para que el cliente obtenga y presente el ID de intento sin modificar los tipos protegidos existentes.
 
-- **Decision**: Inject the supplied `Clock`; store absolute expiry instants and consider an attempt expired when `clock.instant()` is equal to or after its expiry.
-- **Rationale**: Deterministic time is already part of the factory contract and the spec says the exact expiry instant is expired.
-- **Alternatives considered**: System clock calls inside the service defeat deterministic behavior; background timers are unnecessary because operations can lazily expire due attempts and a sweep operation can release all due attempts.
+## Alertas de existencias
 
-### Retry identity and late payment
+- **Decision**: Conservar la notificación mediante `StockAlertListener`; disparar al cruzar el umbral considerando stock menos reservas activas y rearmar solo al agregar stock y superar cinco.
+- **Rationale**: Cumple el contrato desacoplado existente y la regla de rearme de la especificación.
+- **Alternatives considered**: Integrar correo en el dominio. Descartado porque acoplaría inventario a un canal concreto.
 
-- **Decision**: Give every reservation generation a unique attempt ID and retain attempt history by that ID. Add an attempt-aware payment approval interface in an implementation-owned package.
-- **Rationale**: The spec permits reusing an order ID after expiry and explicitly requires an old payment approval not to affect a later attempt. `InventoryService.confirm(String orderId)` lacks enough information to guarantee that rule.
-- **Alternatives considered**: Reusing only order ID is ambiguous; changing the protected public API is disallowed. Keep the legacy method for compatibility, while payment integrations use the extension.
+## Resultado de la investigación
 
-### Category policies and specification limits
-
-- **Decision**: Represent current category durations and limits as policy data, not scattered branches.
-- **Rationale**: `STANDARD`, `PRE_ORDER`, and `FLASH_SALE` have distinct rules and should be easy to audit.
-- **Alternatives considered**: A switch statement is simpler initially but less maintainable.
-- **Open constraint**: `ProductCategory` is a fixed enum in the protected API and `registerProduct` accepts only that enum. This means a new category cannot be introduced without changing the protected API or defining a separate registration contract. FR-008 remains unsatisfied until the spec/constitution clarifies the allowed extension mechanism.
-
-### Spring Boot and controller architecture
-
-- **Decision**: Do not assume HTTP endpoints; preserve the endpoint-free scope. The Spring Boot/controller mandate needs a product-level decision before implementation.
-- **Rationale**: The constitution requires Spring Boot and Controller/Service/Repository/Model separation, while FR-015 and the README explicitly exclude endpoints. The current `pom.xml` is a plain Java library with no Spring dependency.
-- **Alternatives considered**: Adding a web controller would violate scope; adding Spring Boot solely for the factory has no established benefit and could affect packaging/dependencies.
-- **Open constraint**: Decide whether Spring Boot is required only for dependency wiring (with a non-HTTP adapter) or whether the constitution should be amended for this in-process service.
-
-### Alerts
-
-- **Decision**: Keep alert delivery behind the existing `StockAlertListener`; maintain per-product latch state and rearm only when `addStock` raises availability above five.
-- **Rationale**: This matches the protected listener contract and constitution. Alert decisions occur with the stock state transition to avoid duplicate threshold-crossing notifications.
-- **Alternatives considered**: Direct mail/channel delivery couples domain logic to infrastructure and violates the listener boundary.
-
+Los hechos de stack y despliegue están resueltos por el repositorio y la constitución vigente. FR-008 y FR-009 siguen como decisiones de contrato necesarias antes de implementar; no hay una solución que satisfaga literalmente ambos requisitos y mantenga intacto el API actual sin acordar una superficie adicional.
