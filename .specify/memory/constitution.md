@@ -1,6 +1,6 @@
 <!-- Informe de impacto de sincronización
-Cambio de versión: 1.2.1 → 1.2.2
-Principios modificados: IV. Contrato, stack y arquitectura; se explicita Spring Boot en el stack.
+Cambio de versión: 1.2.2 → 1.2.3
+Principios modificados: IV. Contrato, stack y arquitectura; se elimina la exigencia de Spring Boot y de controladores.
 Secciones agregadas: ninguna.
 Secciones eliminadas: ninguna.
 Pendientes: TODO(RATIFICATION_DATE): confirmar fecha original de adopción.
@@ -31,9 +31,10 @@ de inventario para admitir canales de comunicación adicionales.
 ### IV. Contrato, stack y arquitectura
 La implementación DEBE conservar el contrato público de `com.store.inventory.api`, no modificar
 sus archivos y mantener la firma de `Inventory.create(Clock, StockAlertListener)`. El servicio
-DEBE usar Spring Boot, Java 21, Maven y almacenamiento en memoria, sin crear frontend. La arquitectura DEBE
-separar responsabilidades en Controller, Service, Repository y Model/DTO, con una responsabilidad
-clara por clase y método.
+DEBE usar Java 21, Maven y almacenamiento en memoria, sin crear frontend. Spring Boot y los
+controladores HTTP no son requisitos para este proyecto. La estructura interna DEBE ser sencilla y
+separar responsabilidades cuando el dominio lo justifique, con una responsabilidad clara por clase
+y método; no DEBE imponerse una arquitectura por capas que no sea necesaria para cumplir `spec.md`.
 
 ### V. Control del alcance
 La implementación DEBE seguir estrictamente `spec.md` y no agregar funciones no documentadas,
@@ -44,8 +45,9 @@ detecta una falla lógica del dominio, el trabajo sobre código fuente DEBE dete
 ## Restricciones tecnológicas y del dominio
 
 La aplicación móvil envía el carrito y puede reenviar automáticamente cada pedido hasta recibir
-respuesta. El servicio DEBE mantener la corrección de las reservas ante esos reintentos. Las
-respuestas HTTP DEBEN usar códigos semánticos. El almacenamiento permanece en memoria.
+respuesta. El servicio DEBE mantener la corrección de las reservas ante esos reintentos. El
+almacenamiento permanece en memoria. El manejo de HTTP solo aplica si `spec.md` requiere una
+interfaz HTTP.
 
 ## Flujo de desarrollo y calidad
 
@@ -64,4 +66,4 @@ semántico: MAJOR para cambios incompatibles en principios; MINOR para principio
 o ampliadas de forma sustancial; PATCH para aclaraciones que no cambien requisitos. La fecha
 original de ratificación requiere confirmación del responsable del proyecto.
 
-**Versión**: 1.2.2 | **Ratificada**: TODO(RATIFICATION_DATE): confirmar fecha original de adopción | **Última enmienda**: 2026-10-06
+**Versión**: 1.2.3 | **Ratificada**: TODO(RATIFICATION_DATE): confirmar fecha original de adopción | **Última enmienda**: 2026-10-06
